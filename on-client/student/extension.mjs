@@ -140,10 +140,63 @@ function renderIdentityView({ me, devices, sessions } = {}) {
   return root;
 }
 
+// ---------- 14단계: 업무 앱 접근 판정 ----------
+
+// 판정마다 한국어 뜻·원래 코드값·안내를 함께 보인다. 색상은 보조이고 글자로 구분한다.
+const DECISIONS = {
+  allow: { text: '접근 허용', color: 'var(--allow)', note: '정책상 접근 허용 판정입니다. 실제 앱 접속 성공을 보장하지 않습니다.' },
+  deny: { text: '접근 거부', color: 'var(--deny)', note: '정책이 이 업무 앱 접근을 거부했습니다.' },
+  challenge: { text: '추가 인증 또는 확인 필요', color: 'var(--challenge)', note: '추가 인증 또는 확인이 끝나기 전에는 접근이 허용되지 않습니다. 이 앱은 추가 인증을 대신 수행하지 않습니다.' },
+  unknown: { text: '판정 확인 불가', color: 'var(--unknown)', note: '판정을 확인할 수 없어 접근이 허용되지 않음으로 취급합니다.' },
+};
+
+// 네 값이 아니면 unknown과 같은 확인 불가로 처리하고, 받은 원래 값을 따로 적는다.
+function decisionText(code) {
+  const known = typeof code === 'string' && Object.hasOwn(DECISIONS, code);
+  const info = DECISIONS[known ? code : 'unknown'];
+  const line = node('p', `${info.text} (${known ? code : 'unknown'})`, 'decision');
+  line.dataset.decision = known ? code : 'unknown';
+  line.style.color = info.color;
+  line.style.fontWeight = '600';
+  const parts = [line, node('p', info.note)];
+  if (!known) parts.push(node('p', `목록에 없는 판정 값을 받았습니다: ${code == null ? '값 없음' : String(code)}`, 'muted'));
+  return parts;
+}
+
+// 요청 전(idle) / 요청 중(loading) / 판정 수신(ok) / 요청 실패(error)를 먼저 나눈다.
+// 호출마다 새 DOM을 만들므로 다시 불러오기(idle) 뒤 이전 판정이 남지 않는다.
+function renderDecisionView({ status, data, error, appId } = {}) {
+  const root = node('div', null, 'student-decision');
+  if (status === 'idle') {
+    root.append(node('p', '앱을 골라 접근을 요청하세요. 아직 요청한 업무 앱이 없습니다.', 'state state-empty'));
+  } else if (status === 'loading') {
+    root.append(node('p', `판정 확인 중 (${appId || '앱 ID 없음'})`, 'state state-loading'));
+  } else if (status === 'ok') {
+    const result = data || {};
+    root.append(...decisionText(result.decision));
+    const list = node('dl', null, 'kv');
+    field(list, '업무 앱 ID', result.appId || appId);
+    field(list, '판정 이유', result.reason);
+    field(list, '판정 시각', result.checkedAt);
+    root.append(list);
+  } else if (status === 'error') {
+    const message = (error && error.message) || '서버 메시지 없음';
+    const code = error && error.code ? ` (${error.code})` : '';
+    root.append(
+      node('p', `요청 실패: ${message}${code}`, 'state state-error'),
+      node('p', `업무 앱 ID: ${appId || '앱 ID 없음'}`, 'muted'),
+      node('p', '서버의 판정을 받지 못했습니다. 접근 거부 판정이 아니며, 접근이 허용된 것도 아닙니다. 필요하면 직접 다시 요청하세요.'),
+    );
+  } else {
+    root.append(node('p', `판정 확인 불가: 알 수 없는 상태값 (${status == null ? '없음' : status})`, 'state state-empty'));
+  }
+  return root;
+}
+
 export function createStudentView() {
   return {
     renderIdentity(input) { return renderIdentityView(input); },
-    renderDecision() { return '학생 구현 대기: 서버의 판정과 이유를 연결하세요.'; },
+    renderDecision(input) { return renderDecisionView(input); },
     renderEvents() { return '학생 구현 대기: 본인 접속·XDR 기록을 연결하세요.'; },
     renderStatus() { return '학생 구현 대기: 기기·세션·알림과 연결 점검 상태를 구분하세요.'; },
     renderVulnerabilities() { return '학생 구현 대기: 정확한 설치 버전·OSV 출처·조회 시각·부분 결과·조회 실패를 구분하세요.'; },
