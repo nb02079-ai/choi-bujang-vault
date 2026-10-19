@@ -8,3 +8,4 @@ supabase/
 xdr/alerts.log
 policy/test-policy.json
 policy/audit.log
+!on-client/.env.example
