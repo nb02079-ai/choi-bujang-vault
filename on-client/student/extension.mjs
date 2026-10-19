@@ -334,7 +334,23 @@ function textRows(title, rows, emptyText) {
   return section;
 }
 
-// 근거·규칙·세 상태를 구분해 보인다. 조치 버튼은 만들지 않는다(16단계).
+// 16단계: supportedActions에 값이 있을 때만 「<action> 미지원」 비활성 버튼과 준비 중 안내를 둔다.
+// 클릭 처리기를 두지 않으므로 어떤 요청도 보내지 않는다. 빈 배열이면 아무것도 만들지 않는다.
+function unsupportedActionsBlock(actions) {
+  if (!Array.isArray(actions) || actions.length === 0) return null;
+  const block = document.createElement('div');
+  block.append(node('h5', '조치 (supportedActions)'),
+    node('p', '아직 지원하지 않는 조치입니다. 조치 실행 연결은 준비 중이며, 이 화면은 조치 요청을 보내지 않고 실행하지도 않습니다.', 'state state-empty'));
+  for (const action of actions) {
+    const button = node('button', `${action} 미지원`, 'btn');
+    button.type = 'button';
+    button.disabled = true;
+    block.append(button);
+  }
+  return block;
+}
+
+// 근거·규칙·세 상태를 구분해 보인다. 실행 가능한 조치 버튼은 만들지 않는다.
 function renderEventDetail(event) {
   const detail = node('section', null, 'student-event-detail');
   detail.dataset.studentEventDetail = event.id;
@@ -355,7 +371,167 @@ function renderEventDetail(event) {
     node('h5', '상태 (state)'),
     states,
   );
+  const unsupported = unsupportedActionsBlock(event.supportedActions);
+  if (unsupported) detail.append(unsupported);
   return detail;
+}
+
+// ---------- 16단계: 알림·빈 상태·오류·진단 정보 ----------
+
+const RETRY_GUIDE = '다시 시도는 위쪽 「다시 불러오기」 버튼을 직접 누르세요. 자동으로 다시 요청하지 않습니다.';
+const DIAG_RETRY_GUIDE = '다시 시도는 제공 칸의 「도움정보 불러오기」 버튼을 직접 누르세요. 자동으로 다시 요청하지 않습니다.';
+
+const isTimeout = (error) => typeof (error && error.code) === 'string' && error.code.includes('TIMEOUT');
+
+// 실패 안내: 무엇을 불러오지 못했는지, 시간 초과인지, message·code, 사용자가 직접 누르는 다시 시도.
+// 호출마다 새로 그리므로 다시 불러와 성공하면 이전 실패 안내가 남지 않는다.
+function failureBlock(name, error, guide) {
+  const block = document.createElement('div');
+  const message = (error && error.message) || '서버 메시지 없음';
+  const code = error && error.code ? ` (${error.code})` : '';
+  const head = isTimeout(error)
+    ? `시간 초과: ${name} 요청이 제한 시간 안에 끝나지 않았습니다. ${message}${code}`
+    : `${name}를 불러오지 못했습니다: ${message}${code}`;
+  block.append(node('p', head, 'state state-error'), node('p', guide, 'muted'));
+  return block;
+}
+
+// 자료 하나의 불러오는 중 / 결과 / 빈 목록 / 실패를 서로 다른 문장으로 보인다.
+function statusBlock(name, resource, { empty, renderItem }) {
+  const status = resource && resource.status;
+  if (status === 'loading') return node('p', `${name}를 불러오는 중`, 'state state-loading');
+  if (status === 'error') return failureBlock(name, resource.error, RETRY_GUIDE);
+  if (status === 'ok' && Array.isArray(resource.data)) {
+    if (resource.data.length === 0) return node('p', empty, 'state state-empty');
+    const list = node('ul', null, 'plain-list');
+    for (const item of resource.data) list.append(renderItem(item));
+    return list;
+  }
+  return node('p', `확인 불가: ${name}의 상태값을 알 수 없습니다 (${status == null ? '없음' : status})`, 'state state-empty');
+}
+
+function diagnosticsBlock(resource) {
+  const status = resource && resource.status;
+  if (status === 'idle') return node('p', '진단 정보를 아직 불러오지 않았습니다. 위쪽 제공 칸의 「도움정보 불러오기」를 직접 누르세요.', 'state state-empty');
+  if (status === 'loading') return node('p', '진단 정보를 불러오는 중', 'state state-loading');
+  if (status === 'error') return failureBlock('진단 정보', resource.error, DIAG_RETRY_GUIDE);
+  if (status === 'ok') {
+    const data = resource.data || {};
+    const engine = data.engine || {};
+    const list = node('dl', null, 'kv');
+    field(list, 'requestId', data.requestId);
+    field(list, 'component', data.component);
+    field(list, 'version', data.version);
+    field(list, 'checkedAt', data.checkedAt);
+    field(list, 'engine.mode', engine.mode);
+    field(list, 'engine.code', engine.code);
+    return list;
+  }
+  return node('p', `확인 불가: 진단 정보의 상태값을 알 수 없습니다 (${status == null ? '없음' : status})`, 'state state-empty');
+}
+
+const RESOURCE_NAMES = {
+  me: '로그인 정보', apps: '업무 앱', events: '보안 기록', devices: '기기', sessions: '세션',
+  access: '접속 판정', diagnostics: '도움정보', vulnerabilities: '설치 패키지 조회',
+};
+
+// 상태값 알림(기기·세션 상태, 기록 종류)은 확인할 곳을, 그 밖의 code는 조회 실패로 보고 할 일을 안내한다.
+function notificationGuide(resource, code) {
+  const statusCode = [DEVICE_STATUS, SESSION_STATUS, EVENT_KINDS].some((labels) => Object.hasOwn(labels, code));
+  if (statusCode && resource === 'devices') return '확인 필요: 이 기기의 보안 상태를 점검하세요.';
+  if (statusCode && resource === 'sessions') return '확인 필요: 이 세션은 활성 상태가 아닙니다. 다시 로그인이 필요한지 확인하세요.';
+  if (statusCode && resource === 'events') return '확인 필요: 「보안 기록」에서 이 기록의 상세를 확인하세요.';
+  if (resource === 'diagnostics') return `조회 실패: 연결 상태를 확인한 뒤 ${DIAG_RETRY_GUIDE}`;
+  return `조회 실패: 연결 상태를 확인한 뒤 ${RETRY_GUIDE}`;
+}
+
+function notificationsBlock(notifications) {
+  if (!Array.isArray(notifications) || notifications.length === 0) {
+    return node('p', '주의할 알림이 없습니다.', 'state state-empty');
+  }
+  const list = node('ul', null, 'plain-list');
+  for (const item of notifications) {
+    const resource = item && item.resource;
+    const name = Object.hasOwn(RESOURCE_NAMES, resource) ? RESOURCE_NAMES[resource] : '자료 확인 불가';
+    const row = document.createElement('li');
+    const text = document.createElement('div');
+    text.append(
+      node('span', `${name} (${resource == null ? '값 없음' : resource}) · ${item && item.code != null ? item.code : 'code 없음'}`, 'item-title'),
+      node('p', (item && item.message) || '메시지 없음'),
+      node('p', notificationGuide(resource, item && item.code), 'muted'),
+    );
+    row.append(text);
+    list.append(row);
+  }
+  return list;
+}
+
+// 도움 요청용 안전한 값 6개만 고른다. ai 항목 같은 나머지 값은 넣지 않는다.
+function safeDiagnostics(resource) {
+  if (!resource || resource.status !== 'ok') return null;
+  const data = resource.data || {};
+  const engine = data.engine || {};
+  return {
+    requestId: data.requestId ?? null, component: data.component ?? null, version: data.version ?? null,
+    checkedAt: data.checkedAt ?? null, engine: { mode: engine.mode ?? null, code: engine.code ?? null },
+  };
+}
+
+// 「도움정보 복사」: 사용자가 누를 때만 위의 안전한 값을 클립보드에 복사한다. 어디에도 전송하지 않는다.
+function copyHelpBlock(diagnostics) {
+  const block = document.createElement('div');
+  const safe = safeDiagnostics(diagnostics);
+  const button = node('button', '도움정보 복사', 'btn');
+  button.type = 'button';
+  const result = node('p', null, 'muted');
+  result.setAttribute('role', 'status');
+  if (!safe) {
+    button.disabled = true;
+    result.textContent = '복사할 진단 정보가 없습니다. 먼저 제공 칸의 「도움정보 불러오기」로 진단 정보를 받으세요.';
+  }
+  button.addEventListener('click', async () => {
+    if (!safe) return;
+    const text = JSON.stringify(safe, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      result.textContent = '진단 정보 6개 값을 클립보드에 복사했습니다. 붙여 넣기 전에 내용을 직접 확인하세요.';
+    } catch {
+      result.textContent = '자동 복사를 사용할 수 없습니다. 위에 표시된 6개 값을 직접 선택해 복사하세요.';
+    }
+  });
+  block.append(
+    node('p', '이 버튼은 도움 요청에 쓸 진단 정보(requestId·component·version·checkedAt·engine.mode·engine.code)만 복사합니다. 누를 때만 복사하며, 비밀번호·토큰·API 키는 포함하지 않습니다.'),
+    button,
+    result,
+  );
+  return block;
+}
+
+function renderStatusView({ devices, sessions, notifications, diagnostics } = {}) {
+  const root = node('div', null, 'student-status');
+  const deviceBlock = statusBlock('기기 정보', devices, {
+    empty: '등록된 기기가 없습니다. 조회는 성공했고 내 이름으로 등록된 기기가 0개입니다.',
+    renderItem: (device) => {
+      const item = document.createElement('li');
+      item.append(node('span', `${device.label || '이름 정보 없음'} (${device.id})`, 'item-title'), statusText(DEVICE_STATUS, device.status));
+      return item;
+    },
+  });
+  const sessionBlock = statusBlock('세션 정보', sessions, {
+    empty: '현재 연결된 세션이 없습니다. 조회는 성공했고 현재 검증된 연결이 0개입니다.',
+    renderItem: (session) => {
+      const item = document.createElement('li');
+      item.append(node('span', session.id, 'item-title'), statusText(SESSION_STATUS, session.status));
+      return item;
+    },
+  });
+  root.append(
+    identitySection('알림', notificationsBlock(notifications)),
+    identitySection('등록 기기', deviceBlock),
+    identitySection('현재 세션', node('p', '세션은 현재 검증된 연결 1개만 표시합니다. 지난 세션 전체 목록이 아닙니다.', 'muted'), sessionBlock),
+    identitySection('진단 정보', diagnosticsBlock(diagnostics), copyHelpBlock(diagnostics)),
+  );
+  return root;
 }
 
 export function createStudentView() {
@@ -365,7 +541,7 @@ export function createStudentView() {
     renderIdentity(input) { return renderIdentityView(input); },
     renderDecision(input) { return renderDecisionView(input); },
     renderEvents(input) { return renderEventsView(input, eventFilters); },
-    renderStatus() { return '학생 구현 대기: 기기·세션·알림과 연결 점검 상태를 구분하세요.'; },
+    renderStatus(input) { return renderStatusView(input); },
     renderVulnerabilities() { return '학생 구현 대기: 정확한 설치 버전·OSV 출처·조회 시각·부분 결과·조회 실패를 구분하세요.'; },
     renderAiConnection() { return '학생 구현 대기: 모델 응답 점검과 실제 사건 설명을 구분하고 AI 오류·취소·수동 복구를 안내하세요.'; },
     renderExplanation() { return '학생 구현 대기: 선택한 사건의 근거·규칙·현재 상태와 AI 설명을 연결하세요. 제안은 자동 실행하지 않습니다.'; },
