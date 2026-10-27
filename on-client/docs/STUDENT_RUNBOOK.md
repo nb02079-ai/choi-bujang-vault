@@ -119,7 +119,8 @@ flowchart LR
 ### 6.1 제공 코드와 학생 코드의 경계
 
 - 기준: `on-client/.on-starter-manifest.json`의 `sourceHashes`가 제공 파일의 해시 목록입니다.
-- 제공(수정하지 않음): `src/` 아래 전부, `public/` 아래 전부, `vendor/`, `tools/`, `package.json`, `.env.example`, 기존 `docs/` 문서와 `README.md`.
+- 제공: `src/` 아래 전부, `public/` 아래 전부, `vendor/`, `tools/`, `package.json`, `.env.example`, 기존 `docs/` 문서와 `README.md`. 학생 코드 작업에서는 이 파일들을 고치지 않았습니다. 예외는 `public/index.html` 하나입니다. 13단계에서 학생 지시로 제목과 앱 이름만 Endministrator로 바꿨고(커밋 `f14fe98`), 그 밖의 `public/` 파일은 그대로입니다. manifest 해시 대조(2026-10-27)에서 제공 원본과 내용이 다른 파일은 `public/index.html`과 `student/extension.mjs` 두 개뿐입니다.
+- 해시 대조 주의: 제공 원본 중 일부는 줄바꿈이 CRLF입니다. Git 설정 `core.autocrlf=true`인 Windows PC에서는 새로 내려받은 폴더의 파일 줄바꿈이 바뀌어 원문 그대로 계산하면 제공 파일 대부분의 해시가 manifest와 다르게 나옵니다. Git에 저장된 원본의 줄바꿈을 CRLF로 되돌려 계산하면 `docs/AI_SETUP_GUIDE.md`와 `tools/start-alekov.ps1`은 제공 원본과 일치합니다(2026-10-27 새 폴더에서 확인).
 - 제공(수정하지 않음) 중 `student/` 폴더에 있는 `student/engine-adapter.mjs`: manifest에 제공 파일로 기록되어 있고, 현재 파일의 SHA-256이 manifest 값과 같습니다(2026-10-27 대조). 기본값 `{ evidenceMode: 'disconnected' }` 그대로이며 임의 로그인값이나 전체 사건 조회를 만들어 넣지 않았습니다.
 - 학생 영역: `student/extension.mjs`와 이 문서(`docs/STUDENT_RUNBOOK.md`)뿐입니다. `extension.mjs`는 manifest에 시작 틀로 기록되어 있지만 현재 SHA-256이 제공 원본과 달라 학생이 구현한 파일로 분류합니다. 이 문서는 manifest에 없는 새 파일입니다.
 
@@ -184,7 +185,7 @@ flowchart LR
 | `-Background`/`-Port 5190` 실행 중 5190 포트 | 미확인 | 5189만 실행함 |
 | 서버 기동 지연 오류(`N 초 안에 뜨지 않았습니다`) | 미확인 | 재현하지 않음 |
 | macOS·Linux 실행 | 지원하지 않음 | 시작 스크립트가 Windows PowerShell 기반 |
-| 새 폴더에서의 재설치 재현 | 미확인 | 22단계 범위 |
+| 새 폴더에서의 재설치 재현 | 연결 없음·예제 자료 범위만 확인 | 22단계에서 `git clone -b on-21`로 받은 새 폴더에서 실행함. 결과와 미확인 항목은 `STUDENT_RELEASE_CHECK.md`, 보존 계획은 `STUDENT_DATA_PLAN.md` 참고 |
 
 ## 9. 지킬 것
 
