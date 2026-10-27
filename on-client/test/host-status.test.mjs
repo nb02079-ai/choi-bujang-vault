@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readCpu, readMemory, readDisk, readHostMetrics, SOURCE_MEASURED, describeHostMetrics, formatGb, formatPercent, formatLocalTime, reasonText } from '../src/host-status/host-metrics.mjs';
+import { readNetwork, readFirewall, readEvents, readHostSystem, describeHostSystem, runPowerShell, SCRIPTS, SYSTEM_REASONS, EVENT_MAX } from '../src/host-status/host-system.mjs';
+import { describeSdpState, readSdpState } from '../src/host-status/sdp-state.mjs';
 import { createTrend, describeTrend, TREND_NEEDS_TWO_SAMPLES, TREND_NO_USABLE_SAMPLE } from '../src/host-status/host-trend.mjs';
 
 const NOW = Date.parse('2026-10-27T07:00:00.000Z');
@@ -211,4 +213,181 @@ test('추이: 소수 1자리에서 0으로 읽히는 변화는 -0.0이 아니라
   assert.match(text.rows.find((row) => row.id === 'disk.freeBytes').text, /직전 대비 ±0\.0 GB/u);
   assert.match(text.rows.find((row) => row.id === 'cpu.percent').text, /직전 대비 ±0\.0 %p/u);
   assert.equal(text.rows.some((row) => row.text.includes('-0.0')), false);
+});
+
+// ---- 스텝 4: 네트워크·방화벽·Windows 기록 읽기, SDP 상태 (읽기 전용, 주소 비노출, 공격·침투 흉내 없음) ----
+const IPV4_SHAPE = /\b\d{1,3}(?:\.\d{1,3}){3}\b/u;
+const MAC_SHAPE = /(?:[0-9A-Fa-f]{2}[-:]){5}[0-9A-Fa-f]{2}/u;
+const fixed = (map) => async (script) => {
+  for (const [name, reply] of Object.entries(map)) if (script === SCRIPTS[name]) return reply;
+  return { ok: false, code: 'COMMAND_FAILED' };
+};
+const NETWORK_RAW = {
+  adapters: [{ name: '이더넷', status: 'Up', linkSpeed: '1 Gbps' }, { name: 'VPN', status: 'Disconnected', linkSpeed: '1 Gbps' }],
+  interfaces: [{ name: '이더넷', dhcp: 'Enabled', state: 'Connected' }],
+  profiles: [{ name: '이더넷', category: 'Private', ipv4: 'Internet' }],
+};
+const FIREWALL_RAW = {
+  profiles: [{ name: 'Domain', enabled: 'True', inbound: 'NotConfigured', outbound: 'NotConfigured' }, { name: 'Public', enabled: 'True', inbound: 'Block', outbound: 'Allow' }],
+  rules: { total: 581, enabled: 352 },
+};
+const EVENTS_RAW = { system: { errors: 2, warnings: 10 }, application: { errors: 3, warnings: 6 } };
+const T0 = Date.parse('2026-10-27T07:20:00.000Z');
+
+test('읽기 전용 보장: 명령은 허용 목록의 읽기 명령뿐이고 설정을 바꾸는 동사와 주소 속성이 없다', () => {
+  const allowed = new Set(['Get-NetAdapter', 'Get-NetIPInterface', 'Get-NetConnectionProfile', 'Get-NetFirewallProfile', 'Get-NetFirewallRule', 'Get-WinEvent', 'Get-Date', 'ForEach-Object', 'ConvertTo-Json', 'Count-Events', 'Check-Access']);
+  for (const [name, script] of Object.entries(SCRIPTS)) {
+    const used = script.match(/\b[A-Z][A-Za-z]+-[A-Z][A-Za-z]+\b/gu) ?? [];
+    for (const command of used) assert.ok(allowed.has(command), `${name}: 허용 목록에 없는 명령 ${command}`);
+    assert.doesNotMatch(script, /\b(?:Set|New|Remove|Enable|Disable|Add|Clear|Reset|Rename|Copy|Move|Start|Stop|Restart|Invoke|Import|Update|Out|Write|Register|Unregister)-/u, `${name}: 변경 동사`);
+    assert.doesNotMatch(script, /netsh|\bsc\.exe|\breg\b|Start-Process|Invoke-Expression|\biex\b|-Verb|RunAs|>\s*\S/iu, `${name}: 변경·권한 상승·리다이렉트 구문`);
+    assert.doesNotMatch(script, /Get-NetIPAddress|Get-NetIPConfiguration|Get-DnsClientServerAddress|MacAddress|IPv4Address|IPAddress|DefaultGateway|Get-NetNeighbor|Get-NetRoute/u, `${name}: 주소를 읽는 명령이나 속성`);
+    assert.doesNotMatch(script, /\$\{|"/u, `${name}: 사용자 입력을 끼울 자리나 큰따옴표`);
+  }
+  assert.match(SCRIPTS.events, /LogName = \$log/u);
+  assert.doesNotMatch(SCRIPTS.events, /Security/u, 'Security 기록은 읽지 않는다');
+});
+
+test('네트워크: 연결된 어댑터만 남기고 주소는 어디에도 없다', async () => {
+  const result = await readNetwork({ run: fixed({ network: { ok: true, data: NETWORK_RAW } }), now: () => T0 });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.adapters.length, 1);
+  assert.deepEqual(result.adapters[0], { name: '이더넷', linkSpeed: '1 Gbps', dhcp: 'Enabled', ipv4Connectivity: 'Internet', category: 'Private' });
+  assert.equal(result.totalAdapters, 2);
+  const dump = JSON.stringify(result);
+  assert.doesNotMatch(dump, IPV4_SHAPE);
+  assert.doesNotMatch(dump, MAC_SHAPE);
+});
+
+test('네트워크: 어댑터가 하나뿐이라 JSON이 객체로 와도 읽고, 모양이 틀린 결과는 사용하지 않는다', async () => {
+  const single = { adapters: { name: '이더넷', status: 'Up', linkSpeed: '1 Gbps' }, interfaces: [], profiles: [] };
+  const result = await readNetwork({ run: fixed({ network: { ok: true, data: single } }), now: () => T0 });
+  assert.equal(result.adapters.length, 1);
+  assert.equal(result.adapters[0].dhcp, null);
+  assert.equal(await readNetwork({ run: fixed({ network: { ok: true, data: { nothing: 1 } } }), now: () => T0 }).then((r) => r.code), 'OUTPUT_INVALID');
+});
+
+test('방화벽: 프로필과 규칙 개수를 읽고, 모순된 개수는 사용하지 않는다', async () => {
+  const result = await readFirewall({ run: fixed({ firewall: { ok: true, data: FIREWALL_RAW } }), now: () => T0 });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.profiles.length, 2);
+  assert.deepEqual(result.rules, { total: 581, enabled: 352 });
+  const bad = { ...FIREWALL_RAW, rules: { total: 10, enabled: 99 } };
+  assert.equal((await readFirewall({ run: fixed({ firewall: { ok: true, data: bad } }), now: () => T0 })).code, 'OUTPUT_INVALID');
+});
+
+test('기록 건수: 오류와 경고를 나누어 읽고 상한에 닿으면 이상으로 표시한다', async () => {
+  const result = await readEvents({ run: fixed({ events: { ok: true, data: EVENTS_RAW } }), now: () => T0 });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.windowHours, 24);
+  assert.deepEqual(result.system, { errors: 2, warnings: 10, errorsAtLeast: false, warningsAtLeast: false });
+  const capped = await readEvents({ run: fixed({ events: { ok: true, data: { ...EVENTS_RAW, system: { errors: EVENT_MAX, warnings: 0 } } } }), now: () => T0 });
+  assert.equal(capped.system.errorsAtLeast, true);
+  assert.equal((await readEvents({ run: fixed({ events: { ok: true, data: { system: { errors: -1, warnings: 0 }, application: { errors: 0, warnings: 0 } } } }), now: () => T0 })).code, 'OUTPUT_INVALID');
+});
+
+test('관리자 권한이 필요한 항목은 바꾸려 하지 않고 확인 불가와 이유로 남긴다', async () => {
+  const denied = { ok: false, code: 'ACCESS_DENIED' };
+  const result = await readHostSystem({ run: fixed({ network: { ok: true, data: NETWORK_RAW }, firewall: denied, events: { ok: true, data: EVENTS_RAW } }), now: () => T0 });
+  assert.equal(result.network.status, 'ok');
+  assert.equal(result.firewall.status, 'unavailable');
+  assert.equal(result.firewall.code, 'ACCESS_DENIED');
+  assert.equal('profiles' in result.firewall, false, '확인 불가에는 값이 없어야 한다');
+  const rows = describeHostSystem(result).rows;
+  const firewallRow = rows.find((row) => row.key === 'firewall');
+  assert.equal(firewallRow.status, 'unavailable');
+  assert.deepEqual(firewallRow.lines, ['확인 불가']);
+  assert.match(firewallRow.note, /관리자 권한/u);
+  assert.match(firewallRow.note, /ACCESS_DENIED/u);
+  assert.match(firewallRow.badge, /^확인 불가 · 시도 /u);
+});
+
+test('실행 실패의 이유 분류: 시간 초과, PowerShell 없음, 오류 종료, 형식 오류, 권한 오류 JSON', async () => {
+  const via = (impl) => runPowerShell('x', { execFileImpl: impl });
+  assert.equal((await via((c, a, o, cb) => cb(Object.assign(new Error('t'), { killed: true }), ''))).code, 'COMMAND_TIMEOUT');
+  assert.equal((await via((c, a, o, cb) => cb(Object.assign(new Error('n'), { code: 'ENOENT' }), ''))).code, 'POWERSHELL_UNAVAILABLE');
+  assert.equal((await via((c, a, o, cb) => cb(new Error('e'), ''))).code, 'COMMAND_FAILED');
+  assert.equal((await via((c, a, o, cb) => cb(null, '깨진 출력'))).code, 'OUTPUT_INVALID');
+  assert.equal((await via((c, a, o, cb) => cb(null, '﻿{"error":"ACCESS_DENIED"}'))).code, 'ACCESS_DENIED');
+  assert.equal((await via((c, a, o, cb) => cb(null, '{"error":"알수없음"}'))).code, 'COMMAND_FAILED');
+  assert.equal((await via(() => { throw new Error('동기 오류'); })).code, 'POWERSHELL_UNAVAILABLE');
+  const seen = [];
+  await via((command, args, options, cb) => { seen.push({ command, args, options }); cb(null, '{"a":1}'); });
+  assert.equal(seen[0].command, 'powershell.exe');
+  assert.deepEqual(seen[0].args.slice(0, 4), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass']);
+  assert.equal(seen[0].options.windowsHide, true);
+  assert.ok(seen[0].options.timeout > 0);
+});
+
+test('표시: 건수 문구는 탐지 결과가 아니라고 적고, 실측 줄에는 시각이, Security는 읽지 않음으로 표시한다', async () => {
+  const result = await readHostSystem({ run: fixed({ network: { ok: true, data: NETWORK_RAW }, firewall: { ok: true, data: FIREWALL_RAW }, events: { ok: true, data: EVENTS_RAW } }), now: () => T0 });
+  const view = describeHostSystem(result);
+  assert.match(view.notice, /침해나 공격을 탐지한 결과가 아닙니다/u);
+  const byKey = Object.fromEntries(view.rows.map((row) => [row.key, row]));
+  assert.equal(byKey.events.badge, '실측 · 측정 16:20:00');
+  assert.deepEqual(byKey.events.lines, ['System: 오류 2건 · 경고 10건', 'Application: 오류 3건 · 경고 6건']);
+  assert.match(byKey.events.note, /침해나 공격을 탐지한 결과가 아닙니다/u);
+  assert.match(byKey.firewall.lines[0], /Domain 프로필: 켜짐\(True\) · 기본 인바운드 정책 미지정\(NotConfigured\)/u);
+  assert.match(byKey.firewall.lines.at(-1), /규칙 581개 \(사용 중 352개\)/u);
+  assert.match(byKey.network.lines[0], /이더넷 · 속도 1 Gbps · DHCP 사용\(Enabled\) · 인터넷 연결\(Internet\) · 분류 개인\(Private\)/u);
+  assert.match(byKey.network.note, /IP 주소와 MAC 주소는 읽지도 표시하지도 않습니다/u);
+  assert.equal(byKey['security-log'].status, 'not_read');
+  assert.equal(byKey['security-log'].badge, '읽지 않음');
+  assert.equal(JSON.stringify(view).match(IPV4_SHAPE), null);
+  assert.equal(describeHostSystem(undefined).rows.slice(0, 3).every((row) => row.status === 'unavailable'), true);
+});
+
+test('SDP 상태: 미연결, 예제, 어댑터 설정됨을 PC 값과 따로 표시하고 알 수 없는 값은 연결로 보지 않는다', () => {
+  assert.equal(describeSdpState('disconnected').label, 'SDP 미연결');
+  assert.equal(describeSdpState('disconnected').status, 'not_connected');
+  assert.equal(describeSdpState('demo').label, '예제 자료 (SDP 아님)');
+  assert.equal(describeSdpState('connected').label, 'SDP 어댑터 설정됨');
+  assert.match(describeSdpState('connected').note, /연결 성공을 확인한 것은 아닙니다/u);
+  for (const bad of [undefined, null, '', 'CONNECTED', 'constructor', 5]) {
+    const state = describeSdpState(bad);
+    assert.equal(state.status, 'unknown');
+    assert.equal(state.label, 'SDP 상태 확인 불가');
+  }
+  assert.equal(describeSdpState('disconnected').separateFromPc, true);
+  assert.match(describeSdpState('disconnected').note, /PC에서 잰 값의 성공·실패와 별개입니다/u);
+  assert.equal(readSdpState({ evidenceMode: 'disconnected' }).label, 'SDP 미연결');
+  assert.equal(readSdpState(undefined).status, 'unknown');
+});
+
+test('SDP 미연결이어도 PC 조회 결과는 그대로 성공으로 남고 서로 섞이지 않는다', async () => {
+  const pc = await readHostSystem({ run: fixed({ network: { ok: true, data: NETWORK_RAW }, firewall: { ok: true, data: FIREWALL_RAW }, events: { ok: true, data: EVENTS_RAW } }), now: () => T0 });
+  const sdp = readSdpState({ evidenceMode: 'disconnected' });
+  assert.equal(pc.network.status, 'ok');
+  assert.equal(sdp.status, 'not_connected');
+  assert.equal(JSON.stringify(pc).includes('SDP'), false, 'PC 결과에 SDP 상태가 섞이지 않는다');
+  assert.equal(JSON.stringify(sdp).includes('measured'), false, 'SDP 상태는 실측 배지를 쓰지 않는다');
+});
+
+// ---- 이 PC에서 실제로 읽는 시험 (읽기만 함. 값은 PC마다 달라 형식과 안전 조건만 봅니다) ----
+test('실측: 이 PC에서 실제로 읽으면 값 또는 이유가 나오고 주소는 어디에도 없다', async () => {
+  const result = await readHostSystem();
+  for (const key of ['network', 'firewall', 'events']) {
+    assert.ok(['ok', 'unavailable'].includes(result[key].status), `${key} 상태`);
+    if (result[key].status === 'ok') assert.equal(result[key].source, SOURCE_MEASURED);
+    else assert.ok(Object.hasOwn(SYSTEM_REASONS, result[key].code), `${key} 이유 코드 ${result[key].code}`);
+  }
+  const dump = JSON.stringify(result);
+  assert.doesNotMatch(dump, IPV4_SHAPE);
+  assert.doesNotMatch(dump, MAC_SHAPE);
+  assert.doesNotMatch(JSON.stringify(describeHostSystem(result)), IPV4_SHAPE);
+});
+
+test('기록 건수: 읽기 권한 확인이 건수 계산보다 먼저 들어 있어 권한 없음이 0건으로 보이지 않는다', () => {
+  const script = SCRIPTS.events;
+  assert.match(script, /function Check-Access\(\$log\)/u);
+  assert.ok(script.indexOf('Check-Access $log;') > -1 && script.indexOf('Check-Access $log;') < script.indexOf('Get-WinEvent -FilterHashtable'));
+  assert.match(script, /NoMatchingEventsFound/u);
+});
+
+test('표시: 연결 프로필이 없는 어댑터는 정보 없음이 아니라 연결 프로필 없음으로, 괄호가 겹치지 않게 보인다', async () => {
+  const raw = { adapters: [{ name: '이더넷 3', status: 'Up', linkSpeed: '1 Gbps' }], interfaces: [{ name: '이더넷 3', dhcp: 'Disabled', state: 'Connected' }], profiles: [] };
+  const result = await readHostSystem({ run: fixed({ network: { ok: true, data: raw }, firewall: { ok: true, data: FIREWALL_RAW }, events: { ok: true, data: EVENTS_RAW } }), now: () => T0 });
+  const line = describeHostSystem(result).rows[0].lines[0];
+  assert.equal(line, '이더넷 3 · 속도 1 Gbps · DHCP 사용 안 함, 고정 설정(Disabled) · 연결 프로필 없음 · 분류 연결 프로필 없음');
+  assert.doesNotMatch(line, /\)\(/u);
 });
