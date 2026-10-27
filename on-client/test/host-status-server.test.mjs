@@ -564,3 +564,64 @@ test('서버와 화면의 계약: 일부 읽기가 실패한 실제 서버 응�
     assert.equal(unavailable.every((c) => allText(c).includes('다음에 할 일:') && allText(c).includes('확인 불가')), true);
   } finally { await close(); }
 });
+
+// ======== 시작 오류 문구와 시작 스크립트: 처음 실행하는 사람이 이유와 다음에 할 일을 읽을 수 있어야 합니다 ========
+import { spawnSync } from 'node:child_process';
+import net from 'node:net';
+import { fileURLToPath } from 'node:url';
+import { startupMessage, STARTUP_MESSAGES } from '../src/host-status-server.mjs';
+
+const ENTRY = fileURLToPath(new URL('../src/host-status-server.mjs', import.meta.url));
+const runEntry = (args, env = {}) => spawnSync(process.execPath, [ENTRY, ...args], { encoding: 'utf8', timeout: 8000, env: { ...process.env, ...env } });
+
+test('시작 오류: 모르는 옵션은 코드와 함께 쓸 수 있는 옵션과 다시 할 일을 알려 준다', () => {
+  const result = runEntry(['--x'], { ON_PORT: '5290' });
+  assert.equal(result.status, 1);
+  assert.ok(result.stderr.includes('HOST_STATUS_CONFIGURATION_INVALID'));
+  assert.ok(result.stderr.includes('--demo'));
+  assert.ok(result.stderr.includes('(UNKNOWN_ARGUMENT)'));
+  assert.equal(result.stdout, '', '실패한 실행은 정상 시작 문구를 내지 않는다');
+});
+
+test('시작 오류: 포트 번호가 올바르지 않으면 범위와 예를 알려 준다', () => {
+  for (const bad of ['80', 'abc', '99999', '-5']) {
+    const result = runEntry([], { ON_PORT: bad });
+    assert.equal(result.status, 1, `ON_PORT=${bad}`);
+    assert.ok(result.stderr.includes('1024~65535'), `ON_PORT=${bad}`);
+    assert.ok(result.stderr.includes('ON_PORT'));
+    assert.ok(result.stderr.includes('(INVALID_PORT)'));
+  }
+});
+
+test('시작 오류: 이미 쓰는 포트이면 어떤 포트인지와 다른 번호 예를 알려 준다', async () => {
+  const blocker = net.createServer();
+  await new Promise((resolve) => { blocker.listen(0, '127.0.0.1', resolve); });
+  const port = blocker.address().port;
+  try {
+    const result = await new Promise((resolve) => {
+      const child = spawnSync(process.execPath, [ENTRY], { encoding: 'utf8', timeout: 8000, env: { ...process.env, ON_PORT: String(port) } });
+      resolve(child);
+    });
+    assert.equal(result.status, 1);
+    assert.ok(result.stderr.includes('HOST_STATUS_PORT_IN_USE'));
+    assert.ok(result.stderr.includes(`포트 ${port}`));
+    assert.ok(result.stderr.includes(`ON_PORT = ${port + 1}`), '다른 번호의 예를 보여 준다');
+  } finally { await new Promise((resolve) => { blocker.close(resolve); }); }
+});
+
+test('시작 오류 문구: 알려진 코드는 한국어 이유가 있고 모르는 코드도 다음에 할 일을 보인다', () => {
+  for (const code of Object.keys(STARTUP_MESSAGES)) assert.match(startupMessage(code), /[가-힣]/u, code);
+  assert.match(startupMessage('알수없음'), /ON_PORT/u);
+  assert.match(startupMessage(undefined), /ON_ENGINE_ADAPTER/u);
+  assert.match(startupMessage('constructor'), /확인할 수 없습니다/u, '객체 기본 속성 이름도 알려진 코드로 착각하지 않는다');
+});
+
+test('시작 스크립트: 한글이 깨지지 않게 BOM이 있고, 관리자 권한·정책 변경·설정 변경 구문이 없으며 새 진입점만 실행한다', async () => {
+  const bytes = await readFile(new URL('../tools/start-host-status.ps1', import.meta.url));
+  assert.deepEqual([...bytes.subarray(0, 3)], [0xEF, 0xBB, 0xBF], 'PowerShell 5.1에서 한글이 깨지지 않으려면 BOM이 필요하다');
+  const text = bytes.toString('utf8');
+  assert.ok(text.includes('src\\host-status-server.mjs'));
+  assert.doesNotMatch(text, /Set-ExecutionPolicy|-Verb\s+RunAs|RunAs|Set-NetFirewall|New-NetFirewall|Remove-NetFirewall|netsh|Stop-Process|taskkill|Invoke-Expression|\biex\b/iu);
+  assert.doesNotMatch(text, /ValidateRange/u, '영어 검증 오류 대신 한국어 안내를 쓴다');
+  for (const phrase of ['Node.js 가 없습니다', '포트 번호가 올바르지 않습니다', '를 다른 프로그램이 쓰고 있습니다', '끄려면']) assert.ok(text.includes(phrase), phrase);
+});

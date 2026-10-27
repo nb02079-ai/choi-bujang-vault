@@ -173,6 +173,14 @@ export function createHostStatusServer({
   return server;
 }
 
+// 시작할 때의 오류는 코드와 함께 이유와 다음에 할 일을 한국어로 알립니다. 코드는 그대로 남겨 기록하거나 묻기 쉽게 합니다.
+export const STARTUP_MESSAGES = Object.freeze({
+  UNKNOWN_ARGUMENT: '알 수 없는 실행 옵션입니다. 쓸 수 있는 옵션은 --demo(예제 자료 모드) 하나뿐입니다. 옵션 없이 다시 실행해 보세요.',
+  INVALID_PORT: '포트 번호가 올바르지 않습니다. 환경변수 ON_PORT는 1024~65535 사이의 숫자여야 합니다. 예: $env:ON_PORT = 5190',
+  ENGINE_ADAPTER_INVALID: '연결 어댑터 설정(ON_ENGINE_ADAPTER)을 읽을 수 없습니다. 이 관제만 쓰려면 이 환경변수를 비우고 다시 실행하세요.',
+});
+export const startupMessage = (code) => (Object.hasOwn(STARTUP_MESSAGES, code) ? STARTUP_MESSAGES[code] : '실행 설정을 확인할 수 없습니다. 옵션과 환경변수 ON_PORT, ON_ENGINE_ADAPTER를 확인하세요.');
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const args = process.argv.slice(2);
@@ -186,12 +194,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const engine = demo ? demoEngine() : await loadEngine(process.env.ON_ENGINE_ADAPTER);
     const server = createHostStatusServer({ engine });
     server.on('error', (error) => {
-      console.error(error?.code === 'EADDRINUSE' ? `HOST_STATUS_PORT_IN_USE: 포트 ${port}를 다른 프로그램이 쓰고 있습니다. 다른 번호로 실행하세요(환경변수 ON_PORT).` : 'HOST_STATUS_START_FAILED: 서버를 시작하지 못했습니다.');
+      console.error(error?.code === 'EADDRINUSE' ? `HOST_STATUS_PORT_IN_USE: 포트 ${port}를 다른 프로그램이 쓰고 있습니다. 이 앱이 이미 켜져 있다면 그 창을 닫고, 아니면 다른 번호로 실행하세요. 예: $env:ON_PORT = ${port + 1}` : 'HOST_STATUS_START_FAILED: 서버를 시작하지 못했습니다. 다시 실행해 보고, 계속되면 이 메시지를 기록해 두세요.');
       process.exitCode = 1;
     });
     server.listen(port, '127.0.0.1', () => console.log(`Endministrator PC 상태 관제 ${demo ? '(예제 자료 모드)' : '(SDP 미연결 실행)'}: http://127.0.0.1:${port}/`));
   } catch (error) {
-    console.error(`HOST_STATUS_CONFIGURATION_INVALID: ${error?.message ?? ''}`);
+    const code = typeof error?.message === 'string' ? error.message : '';
+    console.error(`HOST_STATUS_CONFIGURATION_INVALID: ${startupMessage(code)} (${code || '코드 없음'})`);
     process.exitCode = 1;
   }
 }
