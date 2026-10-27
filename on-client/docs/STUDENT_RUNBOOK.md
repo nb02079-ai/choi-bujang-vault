@@ -18,7 +18,7 @@
 | Node.js | `package.json`의 engines는 24.19.0, 시작 스크립트는 22~24 허용 | v24.21.0 (수업 기준과 다름. 스크립트가 "참고" 문구만 출력하고 실행됨) | 실행 확인 |
 | npm | 외부 의존성 없음, 스크립트 실행용 | 11.19.0 | 실행 확인 |
 | PowerShell | `tools\start-alekov.ps1` 실행용 | Windows PowerShell 5.1.26100.9711 | 실행 확인 |
-| 브라우저 | PC 브라우저 | 화면 렌더링은 이 문서 작성자가 확인하지 않음 | 미확인 |
+| 브라우저 | PC 브라우저 | 사용자가 `npm run demo` 화면에서 탭 「보안 기록」, 「다시 불러오기」 버튼, `event-01 상세` 형식 버튼, 예제 자료 안내를 확인함. 브라우저 종류·버전은 기록하지 않음 | 사용자 화면 확인 |
 
 지원하지 않는 환경: Node.js 22 미만 또는 25 이상(시작 스크립트가 거절, 코드 확인), Windows 외 OS(스크립트가 PowerShell 기반이며 실행해 보지 않음, 미확인).
 
@@ -38,8 +38,8 @@ choi-bujang-secret-vault\          <- Git 최상위 (커밋·제출 기준)
     src\actions\, src\vulnerabilities\  <- 조치·취약점 조회 (제공)
     public\                        <- 화면 틀 (제공): index.html, app.js, style.css
     tools\start-alekov.ps1         <- 시작 스크립트 (제공)
-    student\extension.mjs          <- 학생 구현 (화면 8개)
-    student\engine-adapter.mjs     <- 학생 담당 연결 어댑터 (기본: disconnected)
+    student\extension.mjs          <- 학생 구현 (화면 8개). manifest의 제공 원본 해시와 다름
+    student\engine-adapter.mjs     <- 제공 파일 (기본: disconnected). manifest의 제공 원본 해시와 같음
     docs\STUDENT_RUNBOOK.md        <- 이 문서 (학생 작성)
 ```
 
@@ -82,8 +82,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\start-alekov.ps1
 
 1. **브라우저**: 사용자가 `http://127.0.0.1:5189`를 엽니다. 화면 틀은 `public/index.html`, `public/app.js`이고, 화면 내용은 `student/extension.mjs`가 만듭니다.
 2. **로컬 앱 서버**: `src/server.mjs`가 `127.0.0.1:5189`에서 `/api/...` 요청을 받습니다. 학생 요청 본문으로 DB·정책·엔진을 고를 수 없습니다(코드 확인).
-3. **접근 제어·XDR 시스템**: 앱 서버는 `student/engine-adapter.mjs`의 어댑터(기본 `evidenceMode: 'disconnected'`) 또는 SDP 호스트 설정(`-SdpHostConfig`, `src/engine/sdp-host.mjs`)을 통해서만 접근합니다. 기본 실행에서는 연결이 없어 `/api/me`, `/api/apps`, `/api/events`, `/api/devices`, `/api/sessions`가 HTTP 503 `ENGINE_NOT_CONNECTED`를 돌려줍니다(실행 확인).
+3. **접근 제어·XDR 시스템**: 앱 서버는 제공 파일 `student/engine-adapter.mjs`의 어댑터(기본 `evidenceMode: 'disconnected'`) 또는 SDP 호스트 설정(`-SdpHostConfig`, `src/engine/sdp-host.mjs`)을 통해서만 접근합니다. 기본 실행에서는 연결이 없어 `/api/me`, `/api/apps`, `/api/events`, `/api/devices`, `/api/sessions`가 HTTP 503 `ENGINE_NOT_CONNECTED`를 돌려줍니다(실행 확인).
 4. **AI 게이트웨이(CLCO)**: 설명 AI 요청(`/api/ai/explain`, `/api/ai/check`)은 계정 연결 설정(`-NativeHostConfig`)이 있을 때만 `src/ai/`와 `vendor/clco-http.mjs`를 거쳐 나갑니다. 이 설정은 담당자가 발급하며 이 PC에는 없습니다. 따라서 AI 연결은 **미확인**입니다.
+
+5. **OSV 공개 취약점 서비스**: `/api/vulnerabilities` 요청을 받으면 `src/server.mjs`가 만든 `createProjectScanner`(`src/vulnerabilities/project-scan.mjs`)가 `ON_PROJECT_DIRECTORY` 아래의 `package-lock.json`을 읽고, `ON_APPROVED_PUBLIC_PACKAGES`에 승인된 공개 패키지만 `src/vulnerabilities/osv.mjs`를 통해 `https://api.osv.dev/v1/querybatch`로 조회합니다(코드 확인). 이 PC는 두 설정이 비어 있어 외부 조회가 일어나지 않았고(`not_configured`), 실제 OSV 조회는 **미확인**입니다.
 
 ### 5.2 Mermaid
 
@@ -93,21 +95,24 @@ flowchart LR
   S["로컬 앱 서버<br/>on-client/src/server.mjs"]
   E["접근 제어·XDR 시스템<br/>(SDP 호스트)<br/>src/engine/sdp-host.mjs<br/>기본 실행: 연결 없음"]
   A["AI 게이트웨이 CLCO<br/>src/ai/ + vendor/clco-http.mjs<br/>계정 연결 설정 있을 때만"]
+  O["OSV 공개 취약점 서비스<br/>https://api.osv.dev/v1/querybatch<br/>src/vulnerabilities/osv.mjs"]
   B -->|"/api/me, /api/apps, /api/events, /api/devices, /api/sessions, /api/access"| S
   B -->|"/api/ai/explain, /api/ai/check"| S
   B -->|"/api/actions/*, /api/vulnerabilities, /api/diagnostics"| S
   S -->|"student/engine-adapter.mjs 또는 -SdpHostConfig"| E
   S -->|"-NativeHostConfig 있을 때만"| A
+  S -->|"project-scan.mjs: package-lock.json + 승인된 공개 패키지만"| O
 ```
 
 ### 5.3 표
 
 | 상자 | 실제 파일·주소 | 이 PC에서 확인한 상태 |
 |---|---|---|
-| 브라우저 | `http://127.0.0.1:5189/` | 응답 코드 200 확인. 화면 렌더링은 미확인 |
+| 브라우저 | `http://127.0.0.1:5189/` | 응답 코드 200 확인. 예제 모드 화면 일부는 사용자가 확인(8절 참고) |
 | 로컬 앱 서버 | `on-client/src/server.mjs` | 시작·응답·종료 확인 |
 | 접근 제어·XDR 시스템 | `on-client/src/engine/sdp-host.mjs` (설정 `-SdpHostConfig`) | 연결 없음(503 `ENGINE_NOT_CONNECTED`). 실제 연결은 미확인 |
 | AI 게이트웨이(CLCO) | `on-client/src/ai/service.mjs`, `on-client/vendor/clco-http.mjs` (설정 `-NativeHostConfig`) | 설정 없음. `/api/diagnostics`의 `ai.configured`가 `false`(실행 확인). 연결 성공은 미확인 |
+| OSV 공개 취약점 서비스 | `https://api.osv.dev/v1/querybatch` (`on-client/src/vulnerabilities/osv.mjs`, 호출 조립 `project-scan.mjs`, 설정 `ON_PROJECT_DIRECTORY`·`ON_APPROVED_PUBLIC_PACKAGES`) | 이 PC는 설정이 비어 있어 `/api/vulnerabilities`가 `not_configured`(실행 확인). 실제 OSV 조회는 미확인 |
 
 ## 6. 구현 함수, 제공 코드 경계, 확인한 기능
 
@@ -115,8 +120,8 @@ flowchart LR
 
 - 기준: `on-client/.on-starter-manifest.json`의 `sourceHashes`가 제공 파일의 해시 목록입니다.
 - 제공(수정하지 않음): `src/` 아래 전부, `public/` 아래 전부, `vendor/`, `tools/`, `package.json`, `.env.example`, 기존 `docs/` 문서와 `README.md`.
-- 학생 영역: `student/extension.mjs`, `student/engine-adapter.mjs`, 그리고 이 문서.
-- `student/engine-adapter.mjs`는 기본값 `{ evidenceMode: 'disconnected' }`를 그대로 둡니다. 임의 로그인값이나 전체 사건 조회를 만들어 넣지 않았습니다.
+- 제공(수정하지 않음) 중 `student/` 폴더에 있는 `student/engine-adapter.mjs`: manifest에 제공 파일로 기록되어 있고, 현재 파일의 SHA-256이 manifest 값과 같습니다(2026-10-27 대조). 기본값 `{ evidenceMode: 'disconnected' }` 그대로이며 임의 로그인값이나 전체 사건 조회를 만들어 넣지 않았습니다.
+- 학생 영역: `student/extension.mjs`와 이 문서(`docs/STUDENT_RUNBOOK.md`)뿐입니다. `extension.mjs`는 manifest에 시작 틀로 기록되어 있지만 현재 SHA-256이 제공 원본과 달라 학생이 구현한 파일로 분류합니다. 이 문서는 manifest에 없는 새 파일입니다.
 
 ### 6.2 `student/extension.mjs`의 구현 함수
 
@@ -175,7 +180,7 @@ flowchart LR
 | 앱 안 AI 계정 연결과 실제 AI 설명 성공 | 미확인 | `-NativeHostConfig`가 없고 서버가 `NATIVE_HOST_DISABLED` 상태. 이 PC의 `ai.configured`는 `false` |
 | 실제 조치 집행기 연결과 조치 효과 확인 | 미확인 | 집행기 연결 설정 없음. 화면 코드는 `succeeded`일 때만 효과를 표시하도록 작성됨(코드 확인) |
 | 실제 OSV 조회와 `package-lock.json` 대조 | 미확인 | `ON_PROJECT_DIRECTORY`, `ON_APPROVED_PUBLIC_PACKAGES`가 비어 있고 `on-client`에는 lock 파일이 없음 |
-| 브라우저 화면 렌더링과 키보드 조작 | 미확인 | 이 문서 작성 중 브라우저로 열어 보지 않음 |
+| 브라우저 화면 렌더링 중 위 항목 외의 화면, 키보드 조작 | 미확인 | 사용자가 확인한 것은 「보안 기록」 탭, 「다시 불러오기」 버튼, `event-01 상세` 형식 버튼, 예제 자료 안내(demo)뿐임 |
 | `-Background`/`-Port 5190` 실행 중 5190 포트 | 미확인 | 5189만 실행함 |
 | 서버 기동 지연 오류(`N 초 안에 뜨지 않았습니다`) | 미확인 | 재현하지 않음 |
 | macOS·Linux 실행 | 지원하지 않음 | 시작 스크립트가 Windows PowerShell 기반 |
