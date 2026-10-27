@@ -10,73 +10,98 @@
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <style>
-    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
-    body { margin: 0; min-height: 100vh; background: #101a28; color: #ecf4ff; }
-    main { max-width: 760px; margin: 0 auto; padding: 44px 22px 64px; }
-    .eyebrow { color: #8ad8df; font-size: 14px; font-weight: 700; letter-spacing: .08em; }
-    h1 { margin: 16px 0; font-size: clamp(30px, 7vw, 48px); line-height: 1.2; }
-    p { font-size: 17px; line-height: 1.7; color: #bfd0e5; }
-    .notice { margin: 26px 0; padding: 18px; border: 1px solid #d07384; border-radius: 14px; color: #ffe3e8; background: #612a3544; }
+    /* 디자인 토큰: 카드 규격(배경·테두리·라운드·여백), 배지·버튼 규격, 위험도 색을 한곳에 둡니다. 글자와 구조는 바꾸지 않습니다. */
+    :root {
+      color-scheme: dark; font-family: system-ui, sans-serif;
+      --bg: #101a28; --surface: #121620; --surface-inner: #0e131d;
+      --line: #1e2538; --line-strong: #5f7690;
+      --text: #ecf4ff; --text-muted: #bfd0e5; --neutral: #a9b7cc;
+      --accent: #8ad8df; --on-accent: #101a28;
+      --sev-critical: #ff4d4d; --sev-high: #ff944d; --sev-medium: #ffd14d; --sev-low: #4d94ff;
+      --ok: #9be3b0; --error-text: #ffb3c0;
+      --radius: 8px; --pad: 20px; --gap: 16px;
+    }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+    [hidden] { display: none !important; }
+    main { display: grid; gap: var(--gap); align-items: start; max-width: 760px; margin: 0 auto; padding: 44px 22px 64px; }
+    main > * { margin: 0; min-width: 0; }
+    .eyebrow { color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: .08em; }
+    h1 { margin: 0; font-size: clamp(30px, 7vw, 44px); line-height: 1.2; }
+    p { font-size: 17px; line-height: 1.7; color: var(--text-muted); }
+    main > p { max-width: 70ch; }
+    .notice { max-width: 70ch; padding: var(--pad); border: 1px solid color-mix(in srgb, var(--sev-low) 40%, transparent); border-left: 3px solid var(--sev-low); border-radius: var(--radius); color: #dbe9ff; background: color-mix(in srgb, var(--sev-low) 8%, transparent); font-size: 15px; line-height: 1.7; }
+    #offline-banner { padding: 12px 16px; border: 1px solid color-mix(in srgb, var(--sev-medium) 45%, transparent); border-left: 3px solid var(--sev-medium); border-radius: var(--radius); background: color-mix(in srgb, var(--sev-medium) 8%, transparent); color: #ffe9b8; font-size: 15px; line-height: 1.6; }
+
+    /* 카드: 배경 #121620, 테두리 1px #1e2538, 라운드 8px, 여백 20px */
+    .device, .auth, .editor, .ops { padding: var(--pad); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+    .device h2, .auth h2, .editor h2, .ops h2 { margin: 0 0 12px; font-size: 18px; line-height: 1.4; }
     ul { list-style: none; display: grid; gap: 12px; padding: 0; }
-    li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; }
+    #notes { grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+    li { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; background: var(--surface); }
     strong { display: block; font-size: 18px; margin-bottom: 5px; }
-    li span { color: #bfd0e5; }
-    .auth { margin: 26px 0; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
-    .auth h2 { margin: 0 0 12px; font-size: 18px; }
-    .auth form { display: grid; gap: 10px; }
-    .auth label { display: grid; gap: 4px; font-size: 14px; color: #bfd0e5; }
-    .auth input { padding: 10px 12px; border: 1px solid #51667c; border-radius: 8px; background: #101a28; color: #ecf4ff; font-size: 16px; }
-    .auth button { padding: 10px 14px; border: 0; border-radius: 8px; background: #8ad8df; color: #101a28; font-size: 16px; font-weight: 700; cursor: pointer; }
-    .auth button:disabled { opacity: .6; cursor: wait; }
+    li span { color: var(--text-muted); overflow-wrap: anywhere; white-space: pre-wrap; }
+
+    /* 입력 */
+    .auth form, .editor form, li form.edit { display: grid; gap: 10px; }
+    .auth label, .editor label, .device .device-approve label { display: grid; gap: 4px; font-size: 14px; color: var(--text-muted); }
+    input, textarea { padding: 10px 12px; min-height: 40px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 16px; }
+    .device .device-approve { display: grid; gap: 10px; margin-top: 14px; }
+    .device .device-approve input { letter-spacing: .08em; text-transform: uppercase; }
+
+    /* 버튼: 기본 MD 40px, 목록 안 버튼 SM 32px, 터치 화면은 44px. 보조 동작은 윤곽선 버튼 */
+    button { min-height: 40px; padding: 8px 16px; border: 1px solid transparent; border-radius: 6px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
+    button:hover:not(:disabled) { filter: brightness(1.1); }
+    button:disabled { opacity: .55; cursor: wait; }
+    li button { min-height: 32px; padding: 4px 12px; font-size: 14px; }
+    li button.danger { background: var(--sev-critical); color: #1a0b0b; }
+    #device-refresh, #ops-refresh, #logout { background: transparent; border-color: var(--accent); color: var(--accent); }
+    li .actions, .device .device-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    @media (pointer: coarse) { button { min-height: 44px; } li button { min-height: 40px; } }
+
+    /* 키보드 포커스는 색에만 기대지 않고 윤곽선으로 보입니다 */
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    input:focus-visible, textarea:focus-visible { border-color: var(--accent); }
+
+    /* 로그인 영역 */
     .auth #session { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
     .auth #who { font-weight: 700; overflow-wrap: anywhere; }
-    .auth #auth-message { min-height: 1.4em; margin: 12px 0 0; font-size: 15px; color: #ffb3c0; }
-    .auth #auth-message.ok { color: #9be3b0; }
-    [hidden] { display: none !important; }
-    .editor { margin: 0 0 26px; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
-    .editor h2 { margin: 0 0 12px; font-size: 18px; }
-    .editor form, li form.edit { display: grid; gap: 10px; }
-    .editor label { display: grid; gap: 4px; font-size: 14px; color: #bfd0e5; }
-    .editor input, .editor textarea, li form.edit input, li form.edit textarea { padding: 10px 12px; border: 1px solid #51667c; border-radius: 8px; background: #101a28; color: #ecf4ff; font: inherit; font-size: 16px; }
-    .editor button, li button { padding: 8px 14px; border: 0; border-radius: 8px; background: #8ad8df; color: #101a28; font-size: 15px; font-weight: 700; cursor: pointer; }
-    .editor button:disabled { opacity: .6; cursor: wait; }
-    li button.danger { background: #d07384; color: #101a28; }
-    li .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-    li span { overflow-wrap: anywhere; white-space: pre-wrap; }
-    .editor #note-message { min-height: 1.4em; margin: 12px 0 0; font-size: 15px; color: #ffb3c0; }
-    .editor #note-message.ok { color: #9be3b0; }
-    .device { margin: 26px 0; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
-    .device h2 { margin: 0 0 12px; font-size: 18px; }
-    .device #device-status { display: inline-block; margin: 0 0 8px; padding: 4px 12px; border: 1px solid #51667c; border-radius: 999px; font-size: 15px; font-weight: 700; color: #ecf4ff; }
-    .device #device-status[data-status="approved"] { border-color: #9be3b0; color: #9be3b0; }
-    .device #device-status[data-status="denied"] { border-color: #d07384; color: #ffb3c0; }
-    .device #device-status[data-status="pending"] { border-color: #8ad8df; color: #8ad8df; }
+
+    /* 메시지: 글자와 함께 왼쪽 선 모양으로도 오류와 완료를 구분합니다 (글자는 화면 스크립트가 정함) */
+    #auth-message, #note-message, #device-message { min-height: 1.4em; margin: 12px 0 0; font-size: 15px; color: var(--error-text); }
+    #auth-message:not(:empty), #note-message:not(:empty), #device-message:not(:empty) { padding-left: 10px; border-left: 3px solid var(--sev-critical); }
+    #auth-message.ok, #note-message.ok, #device-message.ok { color: var(--ok); border-left-color: var(--ok); }
+
+    /* 배지: 높이 24px, 좌우 8px / 상하 2px, 라운드 4px. 색은 글자와 함께 쓰는 보조 단서입니다 */
+    .device #device-status, .ops .ops-tag { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 8px; border: 1px solid currentColor; border-radius: 4px; font-size: 13px; font-weight: 700; line-height: 1.2; color: var(--neutral); background: transparent; background: color-mix(in srgb, currentColor 12%, transparent); }
+    .device #device-status { margin: 0 0 8px; }
+    .device #device-status[data-status="approved"] { color: var(--ok); }
+    .device #device-status[data-status="denied"] { color: var(--sev-critical); }
+    .device #device-status[data-status="pending"] { color: var(--sev-medium); }
     .device p { margin: 6px 0 0; font-size: 15px; }
-    .device .device-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-    .device button { padding: 8px 14px; border: 0; border-radius: 8px; background: #8ad8df; color: #101a28; font-size: 15px; font-weight: 700; cursor: pointer; }
-    .device button:disabled { opacity: .6; cursor: wait; }
-    .device .device-code { margin-top: 12px; padding: 12px 14px; border: 1px dashed #8ad8df; border-radius: 10px; color: #ecf4ff; overflow-wrap: anywhere; }
-    .device .device-approve { display: grid; gap: 10px; margin-top: 14px; }
-    .device .device-approve label { display: grid; gap: 4px; font-size: 14px; color: #bfd0e5; }
-    .device .device-approve input { padding: 10px 12px; border: 1px solid #51667c; border-radius: 8px; background: #101a28; color: #ecf4ff; font-size: 16px; letter-spacing: .08em; text-transform: uppercase; }
-    .device #device-message { min-height: 1.4em; color: #ffb3c0; }
-    .device #device-message.ok { color: #9be3b0; }
-    .ops { margin: 26px 0 0; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
-    .ops h2 { margin: 0 0 8px; font-size: 18px; }
+    .device #device-status + p, .device p#device-note { margin-top: 6px; }
+    .device .device-code { margin-top: 12px; padding: 12px 14px; border: 1px dashed var(--accent); border-radius: 6px; color: var(--text); overflow-wrap: anywhere; }
+
+    /* 탈환 작전실 */
     .ops .ops-note { margin: 0 0 12px; font-size: 14px; }
-    .ops button { padding: 8px 14px; border: 0; border-radius: 8px; background: #8ad8df; color: #101a28; font-size: 15px; font-weight: 700; cursor: pointer; }
-    .ops #ops-cards { display: grid; gap: 12px; margin-top: 14px; }
-    .ops .ops-card { padding: 14px 16px; border: 1px solid #51667c; border-radius: 12px; background: #101a28; }
+    .ops #ops-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: var(--gap); margin-top: 14px; }
+    .ops .ops-card { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-inner); }
     .ops .ops-card h3 { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 8px; font-size: 16px; }
-    .ops .ops-tag { padding: 2px 10px; border: 1px solid #51667c; border-radius: 999px; font-size: 13px; font-weight: 700; }
-    .ops .ops-tag[data-tag="확인됨"] { border-color: #9be3b0; color: #9be3b0; }
-    .ops .ops-tag[data-tag="정의"] { border-color: #9cc4ff; color: #cfe2ff; }
-    .ops .ops-tag[data-tag="미확인"] { border-color: #d0a373; color: #ffe9cc; }
+    .ops .ops-tag[data-tag="확인됨"] { color: var(--ok); }
+    .ops .ops-tag[data-tag="정의"] { color: var(--sev-low); }
+    .ops .ops-tag[data-tag="미확인"] { color: var(--sev-medium); }
+    .ops .ops-tag[data-tag="미실행"] { color: var(--neutral); }
     .ops ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; list-style: disc; }
-    .ops li { border: 0; border-radius: 0; padding: 0; background: none; font-size: 14px; line-height: 1.6; color: #bfd0e5; overflow-wrap: anywhere; }
+    .ops li { border: 0; border-radius: 0; padding: 0; background: none; font-size: 14px; line-height: 1.6; color: var(--text-muted); overflow-wrap: anywhere; }
     .ops ul.ops-records { margin-top: 8px; font-family: ui-monospace, Consolas, monospace; }
-    .ops #ops-message { min-height: 1.4em; margin: 10px 0 0; font-size: 14px; color: #ffb3c0; }
-    #offline-banner { margin: 0 0 18px; padding: 12px 16px; border: 1px solid #d0a373; border-radius: 12px; background: #5a45222e; color: #ffe9cc; font-size: 15px; line-height: 1.6; }
+    .ops #ops-message { min-height: 1.4em; margin: 10px 0 0; font-size: 14px; color: var(--error-text); }
+
+    /* 넓은 화면: 12열 격자, 기기 승인과 계정을 나란히 둡니다 */
+    @media (min-width: 1024px) {
+      main { grid-template-columns: repeat(12, minmax(0, 1fr)); max-width: 1200px; padding: 44px 24px 64px; }
+      main > * { grid-column: 1 / -1; }
+      main > .device, main > .auth { grid-column: span 6; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
   </style>
 </head>
 <body>
