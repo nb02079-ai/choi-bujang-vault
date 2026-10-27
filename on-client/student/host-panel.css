@@ -1,0 +1,59 @@
+/* 이 PC 상태 관제 화면(학생 영역). 제공 화면의 CSS 변수(--surface, --border, --accent 등)를 그대로 쓰고, 없으면 대체 값을 씁니다.
+   상태는 색만으로 구분하지 않습니다. 배지 글자(실측 / 확인 불가)와 「다음에 할 일」 문장이 함께 나옵니다. */
+.host-dashboard {
+  --hp-surface: var(--surface, #ffffff);
+  --hp-border: var(--border, #d9dde3);
+  --hp-text: var(--text, #1c2430);
+  --hp-muted: var(--muted, #5a6472);
+  --hp-accent: var(--accent, #2357c6);
+  --hp-accent-soft: var(--accent-soft, #e7eefc);
+  --hp-ok: var(--allow, #1d7a3e);
+  --hp-ok-soft: var(--allow-soft, #e5f4ea);
+  --hp-warn: var(--challenge, #9a5b00);
+  --hp-warn-soft: var(--challenge-soft, #fff4e0);
+  --hp-bad: var(--deny, #b42318);
+  --hp-bad-soft: var(--deny-soft, #fdeceb);
+  --hp-student: var(--student, #6b3fb3);
+  background: var(--hp-surface); border: 1px solid var(--hp-border); border-left: 4px solid var(--hp-student);
+  border-radius: var(--radius, 8px); padding: 16px 18px; margin-bottom: 16px; color: var(--hp-text);
+}
+.host-dashboard[aria-busy="true"] .hp-body { opacity: .85; }
+.hp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.hp-title { margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hp-head .btn { min-height: 40px; min-width: 112px; }
+.hp-head .btn[aria-disabled="true"] { cursor: progress; opacity: .6; }
+.hp-status { margin: 10px 0 4px; font-size: .9rem; color: var(--hp-text); }
+.host-dashboard[data-phase="loading"] .hp-status { color: var(--hp-accent); }
+.host-dashboard[data-phase="error"] .hp-status { color: var(--hp-bad); font-weight: 600; }
+.hp-detail { margin: 4px 0 0; font-size: .875rem; color: var(--hp-muted); overflow-wrap: anywhere; }
+.hp-notice { margin: 4px 0 8px; padding: 8px 10px; font-size: .875rem; background: var(--hp-accent-soft); color: var(--hp-text); border-radius: var(--radius, 8px); }
+.hp-wait { margin: 12px 0 0; padding: 12px; border-radius: var(--radius, 8px); background: var(--hp-accent-soft); color: var(--hp-accent); font-size: .95rem; }
+.hp-body { margin-top: 12px; display: grid; gap: 16px; }
+
+/* 상태 카드 4개 */
+.hp-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.hp-card { border: 1px solid var(--hp-border); border-top: 4px solid var(--hp-ok); border-radius: var(--radius, 8px); padding: 12px 14px; background: var(--hp-surface); display: grid; gap: 4px; align-content: start; }
+.hp-card[data-status="unavailable"] { border-top-color: var(--hp-warn); background: var(--hp-warn-soft); }
+.hp-card-title { margin: 0; font-size: .95rem; }
+.hp-badge { margin: 0; font-size: .8rem; font-weight: 600; color: var(--hp-ok); }
+.hp-card[data-status="unavailable"] .hp-badge, .hp-record[data-status="unavailable"] .hp-badge { color: var(--hp-warn); }
+.hp-record[data-status="not_read"] .hp-badge { color: var(--hp-muted); }
+.hp-value { margin: 2px 0; font-size: 1.6rem; font-weight: 700; line-height: 1.2; }
+.hp-meter { width: 100%; height: 10px; }
+.hp-next { margin: 6px 0 0; padding: 6px 8px; font-size: .85rem; border-left: 3px solid var(--hp-warn); background: var(--hp-surface); color: var(--hp-text); }
+
+/* 추이·기록·SDP */
+.hp-section { border-top: 1px solid var(--hp-border); padding-top: 12px; }
+.hp-section h3 { margin: 0 0 6px; }
+.hp-lines { margin: 4px 0 0; padding-left: 18px; font-size: .9rem; }
+.hp-records { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.hp-record { border: 1px solid var(--hp-border); border-radius: var(--radius, 8px); padding: 10px 12px; }
+.hp-record[data-status="unavailable"] { background: var(--hp-warn-soft); }
+.hp-record-title { margin: 0 0 2px; font-size: .95rem; }
+.hp-sdp .hp-badge { color: var(--hp-text); }
+
+/* 조회 실패 화면: 값 없이 실패한 항목, 이유, 다음에 할 일만 */
+.hp-failure { border: 1px solid var(--hp-bad); border-left-width: 4px; border-radius: var(--radius, 8px); padding: 12px 14px; background: var(--hp-bad-soft); }
+.hp-failure h3 { margin: 0 0 6px; color: var(--hp-bad); }
+.hp-failure .hp-next { background: var(--hp-surface); }
+@media (prefers-reduced-motion: reduce) { .host-dashboard * { transition: none !important; animation: none !important; } }
