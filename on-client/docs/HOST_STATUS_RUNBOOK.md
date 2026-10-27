@@ -142,7 +142,7 @@ Get-NetTCPConnection -LocalPort 5189 -State Listen | ForEach-Object { Stop-Proce
 | 브라우저 | Microsoft Edge로 화면 확인(정상·일부 실패·전체 실패). 다른 브라우저 **미확인** |
 | 실제 SDP(기존 접속·XDR 서버) 연결 | 지원하지 않음. 「SDP 미연결」 또는 「예제 자료(SDP 아님)」만 표시 |
 | AI 연결, 보안 조치 집행, 실제 OSV 조회 | 이 관제의 범위 밖(연결 설정 필요) |
-| 설치 프로그램(setup.exe) | **아직 없음.** 이 문서는 폴더에서 직접 실행하는 방법만 다룹니다 |
+| 설치 프로그램(setup.exe) | **아직 없음(포장 보류).** 포장 도구와 승인 실행 환경이 준비되지 않아 보류했고, 사유와 담당자 준비 항목은 [PACKAGING_PENDING.md](PACKAGING_PENDING.md)에 있습니다. 설치 프로그램이 생기기 전까지는 이 문서의 폴더 실행이 **임시 사용 방법**입니다 |
 | macOS, Linux | 지원하지 않음 |
 
 ## 10. 같은 결과를 다시 만드는 순서
