@@ -57,3 +57,17 @@
 .hp-failure h3 { margin: 0 0 6px; color: var(--hp-bad); }
 .hp-failure .hp-next { background: var(--hp-surface); }
 @media (prefers-reduced-motion: reduce) { .host-dashboard * { transition: none !important; animation: none !important; } }
+
+/* 어두운 테마 보정. 상태 구분은 글자 배지와 함께 색을 쓰며, 색 이름(--hp-*)은 바꾸지 않는다. */
+.host-dashboard { border-left-width: 3px; }
+.hp-card { background: var(--surface-2, var(--hp-surface)); border-top-width: 3px; }
+.hp-card[data-status="unavailable"] { background: var(--hp-warn-soft); }
+.hp-card-title { color: var(--hp-muted); font-weight: 500; }
+.hp-value { font-size: 1.8rem; }
+.hp-meter { accent-color: var(--hp-accent); }
+.hp-notice { border: 1px solid var(--hp-border); }
+.hp-wait { border: 1px solid var(--hp-border); }
+.hp-record { background: var(--surface-2, var(--hp-surface)); }
+.hp-record[data-status="unavailable"] { background: var(--hp-warn-soft); }
+.hp-next { background: transparent; }
+.hp-failure .hp-next { background: transparent; }
